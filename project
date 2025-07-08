@@ -1,0 +1,51 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from flask import Flask, request, jsonify
+import joblib
+import os
+
+def load_and_preprocess_data(filepath):
+    data = pd.read_csv(filepath)
+    data.fillna(method='ffill', inplace=True)
+    X = data.drop('target', axis=1)
+    y = data['target']
+    return train_test_split(X, y, test_size=0.2, random_state=42)
+
+def train_and_save_model(X_train, y_train, model_path='model.pkl'):
+    model = RandomForestClassifier(random_state=42)
+    model.fit(X_train, y_train)
+    joblib.dump(model, model_path)
+    return model
+
+def evaluate_model(model, X_test, y_test):
+    predictions = model.predict(X_test)
+    acc = accuracy_score(y_test, predictions)
+    print(f'Model Accuracy: {acc:.4f}')
+
+app = Flask(__name__)
+
+model_path = 'model.pkl'
+if not os.path.exists(model_path):
+    X_train, X_test, y_train, y_test = load_and_preprocess_data('data.csv')
+    model = train_and_save_model(X_train, y_train, model_path)
+    evaluate_model(model, X_test, y_test)
+else:
+    model = joblib.load(model_path)
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        data = request.get_json(force=True)
+        if 'input' not in data:
+            return jsonify({'error': 'Missing "input" key in JSON'}), 400
+        input_data = np.array(data['input']).reshape(1, -1)
+        prediction = model.predict(input_data)
+        return jsonify({'prediction': prediction.tolist()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
